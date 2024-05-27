@@ -3,12 +3,12 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const { Ollama } = require('ollama');
 
 // Create Discord client instance with required intents
-const client = new Client({ 
+const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ] 
+  ]
 });
 
 // Create an instance of the Ollama client with the local URL
@@ -29,9 +29,9 @@ async function onMessageInteraction(message) {
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
-      messages: [{ role: 'assistant', content: message.content }],
+      messages: [{ role: 'user', content: message.content }],
     });
-    console.log(response);
+    console.log("RESPONSE! ", response);
     if (response && response.message) {
       if (response.message.content) {
         await message.reply(response.message.content);
@@ -56,9 +56,25 @@ client.on('messageCreate', async (message) => {
   // Log incoming messages
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  // Check if the bot is mentioned in the message
+  // Check if the bot is mentioned in the message or if the message is a reply to the bot
   const botMention = `<@${client.user.id}>`;
-  if (message.content.startsWith(botMention)) {
+  const isMentioned = message.content.startsWith(botMention);
+  const isReplyToBot = message.reference && message.reference.messageId;
+
+  if (isMentioned || isReplyToBot) {
+    // If the message is a reply, fetch the original message to check if it was sent by the bot
+    if (isReplyToBot) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        if (referencedMessage.author.id !== client.user.id) {
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to fetch the referenced message:', error);
+        return;
+      }
+    }
+
     await onMessageInteraction(message);
   }
 });
