@@ -14,7 +14,7 @@ const client = new Client({
 // Create an instance of the Ollama client with the local URL
 const ollamaClient = new Ollama({ apiUrl: process.env.OLLAMA_API_URL });
 
-// Store conversation history for each channel
+// Store conversation history for each user in each channel
 const conversationHistory = {};
 
 client.on('ready', () => {
@@ -37,23 +37,21 @@ function splitMessage(message, chunkSize) {
 }
 
 // Function to handle messages from Discord channels
-async function onMessageInteraction(message, channelHistory) {
+async function onMessageInteraction(message, userHistory) {
   try {
     // Show typing indicator
     await message.channel.sendTyping();
-    
+
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
-      messages: channelHistory,
+      messages: userHistory,
     });
-
-    console.log("RESPONSE! ", response);
 
     if (response && response.message) {
       if (response.message.content) {
         // Add the bot response to the conversation history
-        channelHistory.push({ role: 'assistant', content: response.message.content });
+        userHistory.push({ role: 'assistant', content: response.message.content });
 
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
@@ -91,22 +89,32 @@ client.on('messageCreate', async (message) => {
   const isMentioned = message.content.includes(botMention);
   const isReplyToBot = message.reference && message.reference.messageId;
 
-  // Initialize conversation history for the channel if it doesn't exist
+  // Initialize conversation history for the user in the channel if it doesn't exist
   if (!conversationHistory[message.channel.id]) {
-    conversationHistory[message.channel.id] = [];
+    conversationHistory[message.channel.id] = {};
+  }
+  if (!conversationHistory[message.channel.id][message.author.id]) {
+    conversationHistory[message.channel.id][message.author.id] = [];
   }
 
-  if (isMentioned) {
+  const userHistory = conversationHistory[message.channel.id][message.author.id];
+
+  if (message.content.trim() === '/reset') {
+    // Reset the conversation history for the user
+    userHistory.length = 0; // Clear the array without losing reference
+    await message.reply('Conversation history has been reset.');
+  } else if (isMentioned) {
     // Reset the conversation history for new mentions
-    conversationHistory[message.channel.id] = [{ role: 'user', content: message.content }];
-    await onMessageInteraction(message, conversationHistory[message.channel.id]);
+    userHistory.length = 0; // Clear the array without losing reference
+    userHistory.push({ role: 'user', content: message.content });
+    await onMessageInteraction(message, userHistory);
   } else if (isReplyToBot) {
     try {
       const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
       if (referencedMessage.author.id === client.user.id) {
         // Add the new user message to the conversation history
-        conversationHistory[message.channel.id].push({ role: 'user', content: message.content });
-        await onMessageInteraction(message, conversationHistory[message.channel.id]);
+        userHistory.push({ role: 'user', content: message.content });
+        await onMessageInteraction(message, userHistory);
       }
     } catch (error) {
       console.error('Failed to fetch the referenced message:', error);
