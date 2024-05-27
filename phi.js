@@ -26,6 +26,9 @@ function handleOllamaError(error) {
 // Function to handle messages from Discord channels
 async function onMessageInteraction(message) {
   try {
+    // Show typing indicator
+    await message.channel.sendTyping();
+    
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
