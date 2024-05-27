@@ -1,0 +1,50 @@
+{
+  "name": "phi",
+  "version": "1.0.0",
+  "main": "phi.js",
+  "dependencies": {
+    "asynckit": "^0.4.0",
+    "axios": "^1.7.2",
+    "combined-stream": "^1.0.8",
+    "delayed-stream": "^1.0.0",
+    "discord-api-types": "^0.37.83",
+    "discord.js": "^14.15.2",
+    "dotenv": "^16.4.5",
+    "fast-deep-equal": "^3.1.3",
+    "follow-redirects": "^1.15.6",
+    "form-data": "^4.0.0",
+    "lodash": "^4.17.21",
+    "lodash.snakecase": "^4.1.1",
+    "magic-bytes.js": "^1.10.0",
+    "mime-db": "^1.52.0",
+    "mime-types": "^2.1.35",
+    "ollama": "^0.5.1",
+    "proxy-from-env": "^1.1.0",
+    "ts-mixer": "^6.0.4",
+    "tslib": "^2.6.2",
+    "undici": "^6.13.0",
+    "undici-types": "^5.26.5",
+    "whatwg-fetch": "^3.6.20",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/austinksmith/Phi.git"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "chat"
+  ],
+  "author": "Austin K Smith",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/austinksmith/Phi/issues"
+  },
+  "homepage": "https://github.com/austinksmith/Phi#readme",
+  "description": ""
+}
