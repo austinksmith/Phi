@@ -14,8 +14,12 @@ const client = new Client({
 // Create an instance of the Ollama client with the local URL
 const ollamaClient = new Ollama({ apiUrl: process.env.OLLAMA_API_URL });
 
+// Store conversation history for each channel
+const conversationHistory = {};
+
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  console.log(`Connected to ${process.env.OLLAMA_API_URL}`);
 });
 
 // Function to handle errors with Ollama API
@@ -33,7 +37,7 @@ function splitMessage(message, chunkSize) {
 }
 
 // Function to handle messages from Discord channels
-async function onMessageInteraction(message) {
+async function onMessageInteraction(message, channelHistory) {
   try {
     // Show typing indicator
     await message.channel.sendTyping();
@@ -41,13 +45,16 @@ async function onMessageInteraction(message) {
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
-      messages: [{ role: 'user', content: message.content }],
+      messages: channelHistory,
     });
 
     console.log("RESPONSE! ", response);
 
     if (response && response.message) {
       if (response.message.content) {
+        // Add the bot response to the conversation history
+        channelHistory.push({ role: 'assistant', content: response.message.content });
+
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
           // Split the response into chunks of 2000 characters
@@ -81,24 +88,29 @@ client.on('messageCreate', async (message) => {
 
   // Check if the bot is mentioned in the message or if the message is a reply to the bot
   const botMention = `<@${client.user.id}>`;
-  const isMentioned = message.content.startsWith(botMention);
+  const isMentioned = message.content.includes(botMention);
   const isReplyToBot = message.reference && message.reference.messageId;
 
-  if (isMentioned || isReplyToBot) {
-    // If the message is a reply, fetch the original message to check if it was sent by the bot
-    if (isReplyToBot) {
-      try {
-        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-        if (referencedMessage.author.id !== client.user.id) {
-          return;
-        }
-      } catch (error) {
-        console.error('Failed to fetch the referenced message:', error);
-        return;
-      }
-    }
+  // Initialize conversation history for the channel if it doesn't exist
+  if (!conversationHistory[message.channel.id]) {
+    conversationHistory[message.channel.id] = [];
+  }
 
-    await onMessageInteraction(message);
+  if (isMentioned) {
+    // Reset the conversation history for new mentions
+    conversationHistory[message.channel.id] = [{ role: 'user', content: message.content }];
+    await onMessageInteraction(message, conversationHistory[message.channel.id]);
+  } else if (isReplyToBot) {
+    try {
+      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+      if (referencedMessage.author.id === client.user.id) {
+        // Add the new user message to the conversation history
+        conversationHistory[message.channel.id].push({ role: 'user', content: message.content });
+        await onMessageInteraction(message, conversationHistory[message.channel.id]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch the referenced message:', error);
+    }
   }
 });
 
