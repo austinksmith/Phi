@@ -82,7 +82,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   // Log incoming messages
-  console.log(`Received message: ${message.content} from ${message.author.tag}`);
+  console.log(`Received message: ${message.content} from ${message.author.tag} in guild: ${message.guild.id}, channel: ${message.channel.id}`);
 
   // Check if the bot is mentioned in the message or if the message is a reply to the bot
   const botMention = `<@${client.user.id}>`;
@@ -90,14 +90,17 @@ client.on('messageCreate', async (message) => {
   const isReplyToBot = message.reference && message.reference.messageId;
 
   // Initialize conversation history for the user in the channel if it doesn't exist
-  if (!conversationHistory[message.channel.id]) {
-    conversationHistory[message.channel.id] = {};
+  if (!conversationHistory[message.guild.id]) {
+    conversationHistory[message.guild.id] = {};
   }
-  if (!conversationHistory[message.channel.id][message.author.id]) {
-    conversationHistory[message.channel.id][message.author.id] = [];
+  if (!conversationHistory[message.guild.id][message.channel.id]) {
+    conversationHistory[message.guild.id][message.channel.id] = {};
+  }
+  if (!conversationHistory[message.guild.id][message.channel.id][message.author.id]) {
+    conversationHistory[message.guild.id][message.channel.id][message.author.id] = [];
   }
 
-  const userHistory = conversationHistory[message.channel.id][message.author.id];
+  const userHistory = conversationHistory[message.guild.id][message.channel.id][message.author.id];
 
   if (message.content.trim() === '/reset') {
     // Reset the conversation history for the user
