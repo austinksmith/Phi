@@ -23,6 +23,15 @@ function handleOllamaError(error) {
   console.error('An error occurred with the Ollama API:', error);
 }
 
+// Helper function to split a message into chunks of a specified size
+function splitMessage(message, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < message.length; i += chunkSize) {
+    chunks.push(message.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 // Function to handle messages from Discord channels
 async function onMessageInteraction(message) {
   try {
@@ -34,12 +43,18 @@ async function onMessageInteraction(message) {
       model: 'phi3',
       messages: [{ role: 'user', content: message.content }],
     });
+
     console.log("RESPONSE! ", response);
+
     if (response && response.message) {
       if (response.message.content) {
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
-          await message.reply('The response from Ollama API is too long to be sent on Discord.');
+          // Split the response into chunks of 2000 characters
+          const chunks = splitMessage(response.message.content, 2000);
+          for (const chunk of chunks) {
+            await message.reply(chunk);
+          }
         } else {
           await message.reply(response.message.content);
         }
