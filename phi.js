@@ -34,7 +34,12 @@ async function onMessageInteraction(message) {
     console.log("RESPONSE! ", response);
     if (response && response.message) {
       if (response.message.content) {
-        await message.reply(response.message.content);
+        // Check if the response is over 2000 characters
+        if (response.message.content.length > 2000) {
+          await message.reply('The response from Ollama API is too long to be sent on Discord.');
+        } else {
+          await message.reply(response.message.content);
+        }
       } else {
         await message.reply('No suitable message was returned from Ollama API.');
       }
@@ -44,7 +49,7 @@ async function onMessageInteraction(message) {
   } catch (error) {
     // Handle errors with Ollama API
     handleOllamaError(error);
-    await message.reply(error);
+    await message.reply('An error occurred while processing your request.');
   }
 }
 
