@@ -14,7 +14,7 @@ const client = new Client({
 // Create an instance of the Ollama client with the local URL
 const ollamaClient = new Ollama({ apiUrl: process.env.OLLAMA_API_URL });
 
-// Store conversation history for each user in each channel
+// Store conversation history for each channel
 const conversationHistory = {};
 
 client.on('ready', () => {
@@ -37,7 +37,7 @@ function splitMessage(message, chunkSize) {
 }
 
 // Function to handle messages from Discord channels
-async function onMessageInteraction(message, userHistory) {
+async function onMessageInteraction(message, channelHistory) {
   try {
     // Show typing indicator
     await message.channel.sendTyping();
@@ -45,13 +45,13 @@ async function onMessageInteraction(message, userHistory) {
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
-      messages: userHistory,
+      messages: channelHistory,
     });
 
     if (response && response.message) {
       if (response.message.content) {
         // Add the bot response to the conversation history
-        userHistory.push({ role: 'assistant', content: response.message.content });
+        channelHistory.push({ role: 'assistant', content: response.message.content });
 
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
@@ -89,35 +89,61 @@ client.on('messageCreate', async (message) => {
   const isMentioned = message.content.includes(botMention);
   const isReplyToBot = message.reference && message.reference.messageId;
 
-  // Initialize conversation history for the user in the channel if it doesn't exist
+  // Initialize conversation history for the channel if it doesn't exist
   if (!conversationHistory[message.guild.id]) {
     conversationHistory[message.guild.id] = {};
   }
   if (!conversationHistory[message.guild.id][message.channel.id]) {
-    conversationHistory[message.guild.id][message.channel.id] = {};
-  }
-  if (!conversationHistory[message.guild.id][message.channel.id][message.author.id]) {
-    conversationHistory[message.guild.id][message.channel.id][message.author.id] = [];
+    conversationHistory[message.guild.id][message.channel.id] = [];
   }
 
-  const userHistory = conversationHistory[message.guild.id][message.channel.id][message.author.id];
+  const channelHistory = conversationHistory[message.guild.id][message.channel.id];
 
-  if (message.content.trim() === '/reset') {
-    // Reset the conversation history for the user
-    userHistory.length = 0; // Clear the array without losing reference
-    await message.reply('Conversation history has been reset.');
+  if (message.content.trim() === '!reset') {
+    // Check if the user is authorized to use the !reset command
+    if (message.author.username === 'deviousmachine') {
+      // Reset the conversation history for the channel
+      channelHistory.length = 0; // Clear the array without losing reference
+      await message.reply('Conversation history has been reset.');
+    } else {
+      await message.reply('You are not authorized to use this command.');
+    }
   } else if (isMentioned) {
-    // Reset the conversation history for new mentions
-    userHistory.length = 0; // Clear the array without losing reference
-    userHistory.push({ role: 'user', content: message.content });
-    await onMessageInteraction(message, userHistory);
+    // Handle mentions
+    if (message.reference && message.reference.messageId) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        // Add the original message content to the conversation history if it's part of the context
+        channelHistory.push({ role: 'user', content: referencedMessage.content });
+      } catch (error) {
+        console.error('Failed to fetch the referenced message:', error);
+      }
+    }
+    // Add the new user message to the conversation history
+    channelHistory.push({ role: 'user', content: message.content });
+    await onMessageInteraction(message, channelHistory);
   } else if (isReplyToBot) {
     try {
       const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
       if (referencedMessage.author.id === client.user.id) {
         // Add the new user message to the conversation history
-        userHistory.push({ role: 'user', content: message.content });
-        await onMessageInteraction(message, userHistory);
+        channelHistory.push({ role: 'user', content: message.content });
+        await onMessageInteraction(message, channelHistory);
+      }
+    } catch (error) {
+      console.error('Failed to fetch the referenced message:', error);
+    }
+  } else if (message.reference && message.reference.messageId) {
+    try {
+      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+      // Check if the referenced message is part of the context
+      const contextMessage = channelHistory.find(entry => entry.content === referencedMessage.content);
+      if (contextMessage) {
+        // Add the original message content to the conversation history
+        channelHistory.push({ role: 'user', content: referencedMessage.content });
+        // Add the new user message to the conversation history
+        channelHistory.push({ role: 'user', content: message.content });
+        await onMessageInteraction(message, channelHistory);
       }
     } catch (error) {
       console.error('Failed to fetch the referenced message:', error);
