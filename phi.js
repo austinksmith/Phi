@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { Ollama } = require('ollama');
 
 // Create Discord client instance with required intents
@@ -14,13 +14,8 @@ const client = new Client({
 // Create an instance of the Ollama client with the local URL
 const ollamaClient = new Ollama({ apiUrl: process.env.OLLAMA_API_URL });
 
-// Store conversation history for each channel
-const conversationHistory = {};
-
-client.on('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-  console.log(`Connected to ${process.env.OLLAMA_API_URL}`);
-});
+// Store conversation history for each thread
+const threadHistory = {};
 
 // Function to handle errors with Ollama API
 function handleOllamaError(error) {
@@ -36,26 +31,42 @@ function splitMessage(message, chunkSize) {
   return chunks;
 }
 
-// Function to handle messages from Discord channels
-async function onMessageInteraction(message, channelHistory) {
+// Simple function to extract keywords from a sentence (basic keyword extraction)
+function extractKeywords(message) {
+  // Split the message into words and filter out common words
+  const commonWords = ['the', 'is', 'in', 'and', 'a', 'an', 'on', 'to', 'of', 'for', 'with', 'as', 'it', 'at'];
+  const words = message.split(' ')
+    .filter(word => word.length > 2 && !commonWords.includes(word.toLowerCase())); // Filter words longer than 2 chars
+
+  // If there are no good keywords, default to 'discussion'
+  if (words.length === 0) return 'discussion';
+
+  // Join a few keywords together to form the thread name (up to 3 words)
+  return words.slice(0, 3).join(' ');
+}
+
+// Function to handle messages from Discord threads
+async function onMessageInteraction(message, threadID) {
   try {
     // Show typing indicator
     await message.channel.sendTyping();
 
+    // Get the history for the thread
+    const history = threadHistory[threadID];
+
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
       model: 'phi3',
-      messages: channelHistory,
+      messages: history,
     });
 
     if (response && response.message) {
       if (response.message.content) {
         // Add the bot response to the conversation history
-        channelHistory.push({ role: 'assistant', content: response.message.content });
+        history.push({ role: 'assistant', content: response.message.content });
 
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
-          // Split the response into chunks of 2000 characters
           const chunks = splitMessage(response.message.content, 2000);
           for (const chunk of chunks) {
             await message.reply(chunk);
@@ -82,72 +93,53 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   // Log incoming messages
-  console.log(`Received message: ${message.content} from ${message.author.tag} in guild: ${message.guild.id}, channel: ${message.channel.id}`);
+  console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  // Check if the bot is mentioned in the message or if the message is a reply to the bot
+  // Check if the bot is mentioned in the message
   const botMention = `<@${client.user.id}>`;
   const isMentioned = message.content.includes(botMention);
-  const isReplyToBot = message.reference && message.reference.messageId;
 
-  // Initialize conversation history for the channel if it doesn't exist
-  if (!conversationHistory[message.guild.id]) {
-    conversationHistory[message.guild.id] = {};
-  }
-  if (!conversationHistory[message.guild.id][message.channel.id]) {
-    conversationHistory[message.guild.id][message.channel.id] = [];
-  }
+  // When the bot is mentioned, create a thread if one does not already exist
+  if (isMentioned) {
+    try {
+      // Extract keywords from the message for the thread name
+      const threadTopic = extractKeywords(message.content);
+      const threadName = `Discussion: ${threadTopic}`;
 
-  const channelHistory = conversationHistory[message.guild.id][message.channel.id];
+      // Create a new thread with a topic-based name
+      const thread = await message.startThread({
+        name: threadName,
+        autoArchiveDuration: 60, // Automatically archive the thread after 60 minutes of inactivity
+        type: ChannelType.PrivateThread,
+      });
 
-  if (message.content.trim() === '!reset') {
-    // Check if the user is authorized to use the !reset command
-    if (message.author.username === 'deviousmachine') {
-      // Reset the conversation history for the channel
-      channelHistory.length = 0; // Clear the array without losing reference
-      await message.reply('Conversation history has been reset.');
-    } else {
-      await message.reply('You are not authorized to use this command.');
-    }
-  } else if (isMentioned) {
-    // Handle mentions
-    if (message.reference && message.reference.messageId) {
-      try {
-        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-        // Add the original message content to the conversation history if it's part of the context
-        channelHistory.push({ role: 'user', content: referencedMessage.content });
-      } catch (error) {
-        console.error('Failed to fetch the referenced message:', error);
+      // Initialize thread history if it doesn't exist
+      if (!threadHistory[thread.id]) {
+        threadHistory[thread.id] = [];
       }
+
+      // Add the user's message to the thread history
+      threadHistory[thread.id].push({ role: 'user', content: message.content });
+
+      // Handle the bot response in the thread
+      await onMessageInteraction(message, thread.id);
+    } catch (error) {
+      console.error('Failed to create a thread:', error);
     }
+  } else if (message.channel.type === ChannelType.PrivateThread) {
+    // Handle messages within an existing thread
+    const threadID = message.channel.id;
+
+    // Check if the thread history exists
+    if (!threadHistory[threadID]) {
+      threadHistory[threadID] = [];
+    }
+
     // Add the new user message to the conversation history
-    channelHistory.push({ role: 'user', content: message.content });
-    await onMessageInteraction(message, channelHistory);
-  } else if (isReplyToBot) {
-    try {
-      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      if (referencedMessage.author.id === client.user.id) {
-        // Add the new user message to the conversation history
-        channelHistory.push({ role: 'user', content: message.content });
-        await onMessageInteraction(message, channelHistory);
-      }
-    } catch (error) {
-      console.error('Failed to fetch the referenced message:', error);
-    }
-  } else if (message.reference && message.reference.messageId) {
-    try {
-      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      // Check if the referenced message is part of the context
-      const contextMessage = channelHistory.find(entry => entry.content === referencedMessage.content);
-      if (contextMessage) {
-        // Add the original message content to the conversation history
-        channelHistory.push({ role: 'user', content: referencedMessage.content });
-        // Add the new user message to the conversation history
-        channelHistory.push({ role: 'user', content: message.content });
-        await onMessageInteraction(message, channelHistory);
-      }
-    } catch (error) {
-      console.error('Failed to fetch the referenced message:', error);
-    }
+    threadHistory[threadID].push({ role: 'user', content: message.content });
+
+    // Handle the bot response in the thread
+    await onMessageInteraction(message, threadID);
   }
 });
 
