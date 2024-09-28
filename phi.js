@@ -118,7 +118,7 @@ client.on('messageCreate', async (message) => {
       console.error('Failed to create a thread:', error);
     }
   } 
-  // If the message is in a thread and the bot is mentioned, continue the conversation within that thread
+  // If the message is in a thread
   else if (message.channel.isThread()) {
     const threadID = message.channel.id;
 
@@ -127,8 +127,8 @@ client.on('messageCreate', async (message) => {
       threadHistory[threadID] = [];
     }
 
-    // Check if the message is a reply to the bot
-    if (isMentioned || (message.reference && message.reference.messageId)) {
+    // Check if the message is a reply to the bot or if it's mentioned
+    if (isMentioned || message.reference) {
       // Add the new message to the conversation history of the thread
       threadHistory[threadID].push({ role: 'user', content: message.content });
 
