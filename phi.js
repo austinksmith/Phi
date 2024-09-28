@@ -36,7 +36,7 @@ async function generateThreadTopic(content) {
   try {
     const response = await ollamaClient.chat({
       model: 'phi3', // Use the Ollama model
-      messages: [{ role: 'user', content: `Summarize this message in a few words to come up with a funny topic of discussion name: ${content}` }],
+      messages: [{ role: 'user', content: `Summarize this message in a few words: ${content}` }],
     });
 
     // Check if the response contains a valid message
@@ -106,7 +106,7 @@ client.on('messageCreate', async (message) => {
     try {
       // Generate thread topic using Ollama API
       const threadTopic = await generateThreadTopic(message.content);
-      const threadName = `${threadTopic}`;
+      const threadName = `Discussion: ${threadTopic}`;
 
       // Create a new thread with a topic-based name and set autoArchiveDuration to 1 hour (60 minutes)
       const thread = await message.startThread({
