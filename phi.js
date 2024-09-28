@@ -36,7 +36,7 @@ async function generateThreadTopic(content) {
   try {
     const response = await ollamaClient.chat({
       model: 'phi3', // Use the Ollama model
-      messages: [{ role: 'user', content: `Summarize this message in a few words: ${content}` }],
+      messages: [{ role: 'user', content: `Summarize this message in a few words to come up with a funny topic of discussion name: ${content}` }],
     });
 
     // Check if the response contains a valid message
