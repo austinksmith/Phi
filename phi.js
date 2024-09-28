@@ -92,46 +92,46 @@ client.on('messageCreate', async (message) => {
   const isMentioned = message.content.includes(botMention);
 
   // If a new mention happens, create a thread and start interaction
-  if (isMentioned && !message.channel.isThread()) {
-    try {
-      const threadTopic = extractKeywords(message.content);
-      const threadName = `Discussion: ${threadTopic}`;
-
-      // Create a new thread with a topic-based name
-      const thread = await message.startThread({
-        name: threadName,
-        autoArchiveDuration: 60,
-        type: ChannelType.PrivateThread,
-      });
+  if(isMentioned) {
+    if (message.channel.isThread()) {
+      const threadID = message.channel.id;
 
       // Initialize thread history if it doesn't exist
-      if (!threadHistory[thread.id]) {
-        threadHistory[thread.id] = [];
+      if (!threadHistory[threadID]) {
+        threadHistory[threadID] = [];
       }
 
-      // Add the user's message to the thread history
-      threadHistory[thread.id].push({ role: 'user', content: message.content });
+      // Add the new message to the conversation history of the thread
+      threadHistory[threadID].push({ role: 'user', content: message.content });
 
-      // Handle the bot response in the thread
-      await onMessageInteraction(message, thread);
-    } catch (error) {
-      console.error('Failed to create a thread:', error);
+      // Process and respond in the same thread
+      await onMessageInteraction(message, message.channel);
+    } else {
+      try {
+        const threadTopic = extractKeywords(message.content);
+        const threadName = `Discussion: ${threadTopic}`;
+
+        // Create a new thread with a topic-based name
+        const thread = await message.startThread({
+          name: threadName,
+          autoArchiveDuration: 60,
+          type: ChannelType.PrivateThread,
+        });
+
+        // Initialize thread history if it doesn't exist
+        if (!threadHistory[thread.id]) {
+          threadHistory[thread.id] = [];
+        }
+
+        // Add the user's message to the thread history
+        threadHistory[thread.id].push({ role: 'user', content: message.content });
+
+        // Handle the bot response in the thread
+        await onMessageInteraction(message, thread);
+      } catch (error) {
+        console.error('Failed to create a thread:', error);
+      }
     }
-  } 
-  // If the message is in a thread, continue the conversation within that thread
-  else if (message.channel.isThread()) {
-    const threadID = message.channel.id;
-
-    // Initialize thread history if it doesn't exist
-    if (!threadHistory[threadID]) {
-      threadHistory[threadID] = [];
-    }
-
-    // Add the new message to the conversation history of the thread
-    threadHistory[threadID].push({ role: 'user', content: message.content });
-
-    // Process and respond in the same thread
-    await onMessageInteraction(message, message.channel);
   }
 });
 
