@@ -90,6 +90,20 @@ async function onMessageInteraction(message, thread) {
   }
 }
 
+// Check if the message mentions the bot either by username, role ID, or role name
+function isBotMentioned(message, botUser, botRoleID, botRoleName) {
+  const botMention = `<@${botUser.id}>`;  // Mention format for the bot user
+  const roleMention = `<@&${botRoleID}>`; // Mention format for the bot role
+  const roleNameMention = botRoleName.toLowerCase(); // Role name in lowercase for easier matching
+
+  // Check if the bot's username or role ID is mentioned, or if the role name is mentioned as plain text
+  return (
+    message.content.includes(botMention) || 
+    message.content.includes(roleMention) || 
+    message.content.toLowerCase().includes(roleNameMention)
+  );
+}
+
 // Event listener for when a message is sent in Discord channels
 client.on('messageCreate', async (message) => {
   // Ignore messages from bots, including itself
@@ -97,8 +111,14 @@ client.on('messageCreate', async (message) => {
 
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  const botMention = `<@${client.user.id}>`; // Get the bot's ID from the client object
-  const isMentioned = message.content.includes(botMention);
+  // Retrieve the bot's role ID and role name dynamically
+  const botMember = await message.guild.members.fetch(client.user.id);
+  const botRole = botMember.roles.botRole; // Get bot's role (botRole is specific for bot roles)
+  const botRoleID = botRole ? botRole.id : null; // Role ID or null if no role found
+  const botRoleName = botRole ? botRole.name : ''; // Role name or empty string
+
+  // Check if the bot's username, role ID, or role name is mentioned
+  const isMentioned = isBotMentioned(message, client.user, botRoleID, botRoleName);
   const isReplyToBot = message.reference && message.reference.messageId;
 
   // If a new mention happens and it's not in a thread, create a thread
@@ -106,7 +126,7 @@ client.on('messageCreate', async (message) => {
     try {
       // Generate thread topic using Ollama API
       const threadTopic = await generateThreadTopic(message.content);
-      const threadName = threadTopic;
+      const threadName = `${threadTopic}`;
 
       // Create a new thread with a topic-based name and set autoArchiveDuration to 1 hour (60 minutes)
       const thread = await message.startThread({
