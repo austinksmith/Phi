@@ -7,8 +7,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 // Create an instance of the Ollama client with the local URL
@@ -33,12 +33,14 @@ function splitMessage(message, chunkSize) {
 
 // Simple function to extract keywords from a sentence (basic keyword extraction)
 function extractKeywords(message) {
-  const commonWords = ['the', 'is', 'in', 'and', 'a', 'an', 'on', 'to', 'of', 'for', 'with', 'as', 'it', 'at'];
-  const words = message.split(' ')
-    .filter(word => word.length > 2 && !commonWords.includes(word.toLowerCase()));
+  const commonWords = [
+    'the', 'is', 'in', 'and', 'a', 'an', 'on', 'to', 'of', 'for', 'with', 'as', 'it', 'at',
+  ];
+  const words = message.split(' ').filter(
+    (word) => word.length > 2 && !commonWords.includes(word.toLowerCase())
+  );
 
-  if (words.length === 0) return 'discussion';
-  return words.slice(0, 3).join(' ');
+  return words.length === 0 ? 'discussion' : words.slice(0, 3).join(' ');
 }
 
 // Function to handle messages from Discord threads
@@ -64,10 +66,10 @@ async function onMessageInteraction(message, thread) {
         if (response.message.content.length > 2000) {
           const chunks = splitMessage(response.message.content, 2000);
           for (const chunk of chunks) {
-            await thread.send(chunk);  // Send response inside the thread
+            await thread.send(chunk); // Send response inside the thread
           }
         } else {
-          await thread.send(response.message.content);  // Send response inside the thread
+          await thread.send(response.message.content); // Send response inside the thread
         }
       } else {
         await thread.send('No suitable message was returned from Ollama API.');
@@ -88,8 +90,9 @@ client.on('messageCreate', async (message) => {
 
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  const botMention = `<@${client.user.id}>`;  // Get the bot's ID from the client object
+  const botMention = `<@${client.user.id}>`; // Get the bot's ID from the client object
   const isMentioned = message.content.includes(botMention);
+  const isReplyToBot = message.reference && message.reference.messageId;
 
   // If a new mention happens and it's not in a thread, create a thread
   if (isMentioned && !message.channel.isThread()) {
@@ -105,9 +108,7 @@ client.on('messageCreate', async (message) => {
       });
 
       // Initialize thread history if it doesn't exist
-      if (!threadHistory[thread.id]) {
-        threadHistory[thread.id] = [];
-      }
+      threadHistory[thread.id] = [];
 
       // Add the user's message to the thread history
       threadHistory[thread.id].push({ role: 'user', content: message.content });
@@ -118,7 +119,7 @@ client.on('messageCreate', async (message) => {
       console.error('Failed to create a thread:', error);
     }
   } 
-  // If the message is in a thread
+  // If the message is in a thread, process it
   else if (message.channel.isThread()) {
     const threadID = message.channel.id;
 
@@ -127,12 +128,23 @@ client.on('messageCreate', async (message) => {
       threadHistory[threadID] = [];
     }
 
-    // Check if the message is a reply to the bot or if it's mentioned
-    if (isMentioned || message.reference) {
-      // Add the new message to the conversation history of the thread
-      threadHistory[threadID].push({ role: 'user', content: message.content });
+    // Add the new message to the conversation history of the thread
+    threadHistory[threadID].push({ role: 'user', content: message.content });
 
-      // Process and respond in the same thread
+    // Check if the message is a reply to the bot's message
+    if (isReplyToBot) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        if (referencedMessage.author.id === client.user.id) {
+          // Process the interaction if the reply is to the bot's message
+          await onMessageInteraction(message, message.channel);
+        }
+      } catch (error) {
+        console.error('Failed to fetch the referenced message:', error);
+      }
+    } 
+    // Process the interaction if the user mentions the bot
+    else if (isMentioned) {
       await onMessageInteraction(message, message.channel);
     }
   }
