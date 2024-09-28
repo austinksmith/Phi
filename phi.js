@@ -33,26 +33,21 @@ function splitMessage(message, chunkSize) {
 
 // Simple function to extract keywords from a sentence (basic keyword extraction)
 function extractKeywords(message) {
-  // Split the message into words and filter out common words
   const commonWords = ['the', 'is', 'in', 'and', 'a', 'an', 'on', 'to', 'of', 'for', 'with', 'as', 'it', 'at'];
   const words = message.split(' ')
-    .filter(word => word.length > 2 && !commonWords.includes(word.toLowerCase())); // Filter words longer than 2 chars
+    .filter(word => word.length > 2 && !commonWords.includes(word.toLowerCase()));
 
-  // If there are no good keywords, default to 'discussion'
   if (words.length === 0) return 'discussion';
-
-  // Join a few keywords together to form the thread name (up to 3 words)
   return words.slice(0, 3).join(' ');
 }
 
 // Function to handle messages from Discord threads
-async function onMessageInteraction(message, threadID) {
+async function onMessageInteraction(message, thread) {
   try {
-    // Show typing indicator
-    await message.channel.sendTyping();
+    await thread.sendTyping();
 
     // Get the history for the thread
-    const history = threadHistory[threadID];
+    const history = threadHistory[thread.id];
 
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
@@ -69,21 +64,20 @@ async function onMessageInteraction(message, threadID) {
         if (response.message.content.length > 2000) {
           const chunks = splitMessage(response.message.content, 2000);
           for (const chunk of chunks) {
-            await message.reply(chunk);
+            await thread.send(chunk);  // Send response inside the thread
           }
         } else {
-          await message.reply(response.message.content);
+          await thread.send(response.message.content);  // Send response inside the thread
         }
       } else {
-        await message.reply('No suitable message was returned from Ollama API.');
+        await thread.send('No suitable message was returned from Ollama API.');
       }
     } else {
-      await message.reply('No messages were returned from Ollama API.');
+      await thread.send('No messages were returned from Ollama API.');
     }
   } catch (error) {
-    // Handle errors with Ollama API
     handleOllamaError(error);
-    await message.reply('An error occurred while processing your request.');
+    await thread.send('An error occurred while processing your request.');
   }
 }
 
@@ -92,24 +86,22 @@ client.on('messageCreate', async (message) => {
   // Ignore messages from bots, including itself
   if (message.author.bot) return;
 
-  // Log incoming messages
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  // Check if the bot is mentioned in the message
-  const botMention = `<@${client.user.id}>`;
+  const botMention = `<@${client.user.id}>`;  // Get the bot's ID from the client object
+
+  // Check if the bot is mentioned
   const isMentioned = message.content.includes(botMention);
 
-  // When the bot is mentioned, create a thread if one does not already exist
   if (isMentioned) {
     try {
-      // Extract keywords from the message for the thread name
       const threadTopic = extractKeywords(message.content);
       const threadName = `Discussion: ${threadTopic}`;
 
       // Create a new thread with a topic-based name
       const thread = await message.startThread({
         name: threadName,
-        autoArchiveDuration: 60, // Automatically archive the thread after 60 minutes of inactivity
+        autoArchiveDuration: 60,
         type: ChannelType.PrivateThread,
       });
 
@@ -122,24 +114,20 @@ client.on('messageCreate', async (message) => {
       threadHistory[thread.id].push({ role: 'user', content: message.content });
 
       // Handle the bot response in the thread
-      await onMessageInteraction(message, thread.id);
+      await onMessageInteraction(message, thread);
     } catch (error) {
       console.error('Failed to create a thread:', error);
     }
   } else if (message.channel.type === ChannelType.PrivateThread) {
-    // Handle messages within an existing thread
     const threadID = message.channel.id;
 
-    // Check if the thread history exists
     if (!threadHistory[threadID]) {
       threadHistory[threadID] = [];
     }
 
-    // Add the new user message to the conversation history
     threadHistory[threadID].push({ role: 'user', content: message.content });
 
-    // Handle the bot response in the thread
-    await onMessageInteraction(message, threadID);
+    await onMessageInteraction(message, message.channel);
   }
 });
 
