@@ -106,7 +106,7 @@ client.on('messageCreate', async (message) => {
     try {
       // Generate thread topic using Ollama API
       const threadTopic = await generateThreadTopic(message.content);
-      const threadName = `Discussion: ${threadTopic}`;
+      const threadName = `${threadTopic}`;
 
       // Create a new thread with a topic-based name and set autoArchiveDuration to 1 hour (60 minutes)
       const thread = await message.startThread({
