@@ -36,7 +36,7 @@ async function generateThreadTopic(content) {
   try {
     const response = await ollamaClient.chat({
       model: 'phi3', // Use the Ollama model
-      messages: [{ role: 'user', content: `Summarize this message in a few words to create a funny discussion topic name: ${content}`}],
+      messages: [{ role: 'user', content: `Summarize this message in a few words to create a funny discussion topic name, keep the characters to less than 100 and do not include additional messages, here is the content to base the message off of: ${content}`}],
     });
 
     // Check if the response contains a valid message
@@ -99,8 +99,7 @@ function isBotMentioned(message, botUser, botRoleID, botRoleName) {
   // Check if the bot's username or role ID is mentioned, or if the role name is mentioned as plain text
   return (
     message.content.includes(botMention) || 
-    message.content.includes(roleMention) || 
-    message.content.toLowerCase().includes(roleNameMention)
+    message.content.includes(roleMention)
   );
 }
 
