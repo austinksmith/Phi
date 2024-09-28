@@ -31,16 +31,23 @@ function splitMessage(message, chunkSize) {
   return chunks;
 }
 
-// Simple function to extract keywords from a sentence (basic keyword extraction)
-function extractKeywords(message) {
-  const commonWords = [
-    'the', 'is', 'in', 'and', 'a', 'an', 'on', 'to', 'of', 'for', 'with', 'as', 'it', 'at',
-  ];
-  const words = message.split(' ').filter(
-    (word) => word.length > 2 && !commonWords.includes(word.toLowerCase())
-  );
+// Function to generate a topic using Ollama API
+async function generateThreadTopic(content) {
+  try {
+    const response = await ollamaClient.chat({
+      model: 'phi3', // Use the Ollama model
+      messages: [{ role: 'user', content: `Summarize this message in a few words: ${content}` }],
+    });
 
-  return words.length === 0 ? 'discussion' : words.slice(0, 3).join(' ');
+    // Check if the response contains a valid message
+    if (response && response.message && response.message.content) {
+      const summary = response.message.content.trim();
+      return summary.length > 0 ? summary : 'discussion';
+    }
+  } catch (error) {
+    handleOllamaError(error);
+  }
+  return 'discussion'; // Default in case of failure
 }
 
 // Function to handle messages from Discord threads
@@ -97,13 +104,14 @@ client.on('messageCreate', async (message) => {
   // If a new mention happens and it's not in a thread, create a thread
   if (isMentioned && !message.channel.isThread()) {
     try {
-      const threadTopic = extractKeywords(message.content);
+      // Generate thread topic using Ollama API
+      const threadTopic = await generateThreadTopic(message.content);
       const threadName = `Discussion: ${threadTopic}`;
 
-      // Create a new thread with a topic-based name
+      // Create a new thread with a topic-based name and set autoArchiveDuration to 1 hour (60 minutes)
       const thread = await message.startThread({
         name: threadName,
-        autoArchiveDuration: 60,
+        autoArchiveDuration: 60, // Automatically archive after 1 hour of inactivity
         type: ChannelType.PrivateThread,
       });
 
