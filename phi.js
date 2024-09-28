@@ -89,11 +89,10 @@ client.on('messageCreate', async (message) => {
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
   const botMention = `<@${client.user.id}>`;  // Get the bot's ID from the client object
-
-  // Check if the bot is mentioned
   const isMentioned = message.content.includes(botMention);
 
-  if (isMentioned) {
+  // If a new mention happens, create a thread and start interaction
+  if (isMentioned && !message.channel.isThread()) {
     try {
       const threadTopic = extractKeywords(message.content);
       const threadName = `Discussion: ${threadTopic}`;
@@ -118,15 +117,20 @@ client.on('messageCreate', async (message) => {
     } catch (error) {
       console.error('Failed to create a thread:', error);
     }
-  } else if (message.channel.type === ChannelType.PrivateThread) {
+  } 
+  // If the message is in a thread, continue the conversation within that thread
+  else if (message.channel.isThread()) {
     const threadID = message.channel.id;
 
+    // Initialize thread history if it doesn't exist
     if (!threadHistory[threadID]) {
       threadHistory[threadID] = [];
     }
 
+    // Add the new message to the conversation history of the thread
     threadHistory[threadID].push({ role: 'user', content: message.content });
 
+    // Process and respond in the same thread
     await onMessageInteraction(message, message.channel);
   }
 });
