@@ -20,6 +20,7 @@
     "mime-types": "^2.1.35",
     "ollama": "^0.5.1",
     "proxy-from-env": "^1.1.0",
+    "sqlite3": "^5.1.7",
     "ts-mixer": "^6.0.4",
     "tslib": "^2.6.2",
     "undici": "^6.13.0",
@@ -27,7 +28,6 @@
     "whatwg-fetch": "^3.6.20",
     "ws": "^8.17.0"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

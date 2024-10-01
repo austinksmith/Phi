@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { Ollama } = require('ollama');
+const sqlite3 = require('sqlite3').verbose();  // SQLite3 library
 
 // Create Discord client instance with required intents
 const client = new Client({
@@ -14,8 +15,46 @@ const client = new Client({
 // Create an instance of the Ollama client with the local URL
 const ollamaClient = new Ollama({ apiUrl: process.env.OLLAMA_API_URL });
 
-// Store conversation history for each thread
-const threadHistory = {};
+// Initialize SQLite database
+const db = new sqlite3.Database('./message_history.db', (err) => {
+  if (err) {
+    console.error('Error opening database:', err);
+  } else {
+    console.log('Connected to SQLite database.');
+    db.run(`CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL
+    )`);
+  }
+});
+
+// Function to save message to SQLite
+function saveMessageToDB(threadId, role, content) {
+  db.run(`INSERT INTO messages (thread_id, role, content) VALUES (?, ?, ?)`, [threadId, role, content], function(err) {
+    if (err) {
+      console.error('Failed to save message:', err);
+    }
+  });
+}
+
+// Function to retrieve message history from SQLite for a specific thread
+function getMessageHistoryFromDB(threadId) {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT role, content FROM messages WHERE thread_id = ? ORDER BY id ASC`, [threadId], (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        const history = rows.map(row => ({
+          role: row.role,
+          content: row.content,
+        }));
+        resolve(history);
+      }
+    });
+  });
+}
 
 // Function to handle errors with Ollama API
 function handleOllamaError(error) {
@@ -35,19 +74,17 @@ function splitMessage(message, chunkSize) {
 async function generateThreadTopic(content) {
   try {
     const response = await ollamaClient.chat({
-      model: 'phi3', // Use the Ollama model
-      messages: [{ role: 'user', content: `Summarize this message in a few words to create a funny discussion topic name, keep the characters to less than 100 and do not include additional messages, here is the content to base the message off of: ${content}`}],
+      model: 'phi3',
+      messages: [{ role: 'user', content: `Summarize this message in a few words to create a funny discussion topic name, here is the content: ${content}`}],
     });
 
-    // Check if the response contains a valid message
     if (response && response.message && response.message.content) {
-      const summary = response.message.content.trim();
-      return summary.length > 0 ? summary : 'discussion';
+      return response.message.content.trim();
     }
   } catch (error) {
     handleOllamaError(error);
   }
-  return 'discussion'; // Default in case of failure
+  return 'discussion';
 }
 
 // Function to handle messages from Discord threads
@@ -55,8 +92,8 @@ async function onMessageInteraction(message, thread) {
   try {
     await thread.sendTyping();
 
-    // Get the history for the thread
-    const history = threadHistory[thread.id];
+    // Get the history for the thread from SQLite
+    const history = await getMessageHistoryFromDB(thread.id);
 
     // Get the response from Ollama API
     const response = await ollamaClient.chat({
@@ -66,17 +103,17 @@ async function onMessageInteraction(message, thread) {
 
     if (response && response.message) {
       if (response.message.content) {
-        // Add the bot response to the conversation history
-        history.push({ role: 'assistant', content: response.message.content });
+        // Save the bot's response to the database
+        saveMessageToDB(thread.id, 'assistant', response.message.content);
 
         // Check if the response is over 2000 characters
         if (response.message.content.length > 2000) {
           const chunks = splitMessage(response.message.content, 2000);
           for (const chunk of chunks) {
-            await thread.send(chunk); // Send response inside the thread
+            await thread.send(chunk);
           }
         } else {
-          await thread.send(response.message.content); // Send response inside the thread
+          await thread.send(response.message.content);
         }
       } else {
         await thread.send('No suitable message was returned from Ollama API.');
@@ -90,88 +127,61 @@ async function onMessageInteraction(message, thread) {
   }
 }
 
-// Check if the message mentions the bot either by username, role ID, or role name
+// Check if the message mentions the bot
 function isBotMentioned(message, botUser, botRoleID, botRoleName) {
-  const botMention = `<@${botUser.id}>`;  // Mention format for the bot user
-  const roleMention = `<@&${botRoleID}>`; // Mention format for the bot role
-  const roleNameMention = botRoleName.toLowerCase(); // Role name in lowercase for easier matching
+  const botMention = `<@${botUser.id}>`;
+  const roleMention = `<@&${botRoleID}>`;
 
-  // Check if the bot's username or role ID is mentioned, or if the role name is mentioned as plain text
-  return (
-    message.content.includes(botMention) || 
-    message.content.includes(roleMention)
-  );
+  return message.content.includes(botMention) || message.content.includes(roleMention);
 }
 
 // Event listener for when a message is sent in Discord channels
 client.on('messageCreate', async (message) => {
-  // Ignore messages from bots, including itself
   if (message.author.bot) return;
 
   console.log(`Received message: ${message.content} from ${message.author.tag}`);
 
-  // Retrieve the bot's role ID and role name dynamically
   const botMember = await message.guild.members.fetch(client.user.id);
-  const botRole = botMember.roles.botRole; // Get bot's role (botRole is specific for bot roles)
-  const botRoleID = botRole ? botRole.id : null; // Role ID or null if no role found
-  const botRoleName = botRole ? botRole.name : ''; // Role name or empty string
+  const botRole = botMember.roles.botRole;
+  const botRoleID = botRole ? botRole.id : null;
+  const botRoleName = botRole ? botRole.name : '';
 
-  // Check if the bot's username, role ID, or role name is mentioned
   const isMentioned = isBotMentioned(message, client.user, botRoleID, botRoleName);
   const isReplyToBot = message.reference && message.reference.messageId;
 
-  // If a new mention happens and it's not in a thread, create a thread
   if (isMentioned && !message.channel.isThread()) {
     try {
-      // Generate thread topic using Ollama API
       const threadTopic = await generateThreadTopic(message.content);
-      const threadName = `${threadTopic.replace(/"/g, '')}`;
-
-      // Create a new thread with a topic-based name and set autoArchiveDuration to 1 hour (60 minutes)
       const thread = await message.startThread({
-        name: threadName,
-        autoArchiveDuration: 60, // Automatically archive after 1 hour of inactivity
+        name: threadTopic,
+        autoArchiveDuration: 60,
         type: ChannelType.PrivateThread,
       });
 
-      // Initialize thread history if it doesn't exist
-      threadHistory[thread.id] = [];
-
-      // Add the user's message to the thread history
-      threadHistory[thread.id].push({ role: 'user', content: message.content });
+      // Save the user's message to the database
+      saveMessageToDB(thread.id, 'user', message.content);
 
       // Handle the bot response in the thread
       await onMessageInteraction(message, thread);
     } catch (error) {
       console.error('Failed to create a thread:', error);
     }
-  } 
-  // If the message is in a thread, process it
-  else if (message.channel.isThread()) {
+  } else if (message.channel.isThread()) {
     const threadID = message.channel.id;
 
-    // Initialize thread history if it doesn't exist
-    if (!threadHistory[threadID]) {
-      threadHistory[threadID] = [];
-    }
+    // Save the user's message to the database
+    saveMessageToDB(threadID, 'user', message.content);
 
-    // Add the new message to the conversation history of the thread
-    threadHistory[threadID].push({ role: 'user', content: message.content });
-
-    // Check if the message is a reply to the bot's message
     if (isReplyToBot) {
       try {
         const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
         if (referencedMessage.author.id === client.user.id) {
-          // Process the interaction if the reply is to the bot's message
           await onMessageInteraction(message, message.channel);
         }
       } catch (error) {
         console.error('Failed to fetch the referenced message:', error);
       }
-    } 
-    // Process the interaction if the user mentions the bot
-    else if (isMentioned) {
+    } else if (isMentioned) {
       await onMessageInteraction(message, message.channel);
     }
   }
